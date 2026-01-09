@@ -14,8 +14,8 @@ These build on the core decomposition/upsampling methods.
 # - Threshold-based segmentation methods
 # - Local contrast normalization
 
-from core.decomposition import list_decompositions
-from core.upsampling import list_upsamplings
+from priorart.core.decomposition import list_decompositions
+from priorart.core.upsampling import list_upsamplings
 
 
 def get_available_methods():

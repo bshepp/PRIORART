@@ -2,7 +2,7 @@
 
 **Systematic Prior Art Generation for Mathematical Method Combinations**
 
-PRIORART is an umbrella framework for exhaustively exploring and documenting combinations of signal processing methods. By systematically testing all parameter combinations and publishing the results with cryptographic checksums, this project establishes public prior art to prevent future patent claims on these techniques.
+PRIORART is the **single source of truth** for feature extraction across all `*vector` projects. By hosting all decomposition, upsampling, and domain-specific methods in one place, we eliminate code duplication and ensure consistency.
 
 ## Mission
 
@@ -10,76 +10,157 @@ PRIORART is an umbrella framework for exhaustively exploring and documenting com
 
 Mathematical methods belong to everyone. This project creates a documented, timestamped, checksummed record of method combinations before patent trolls can claim them.
 
-## Structure
+## Architecture
 
 ```
-PRIORART/
-├── core/                      # Domain-agnostic infrastructure
-│   ├── decomposition/         # 24+ decomposition methods
-│   ├── upsampling/            # 16+ interpolation methods
-│   ├── exhaustive.py          # Combination runner
-│   ├── checksums.py           # SHA256 generation
-│   └── analysis.py            # Redundancy detection
-├── domains/
-│   ├── scalar2d/              # 2D scalar fields (thermal, pressure, etc.)
-│   │   ├── generators.py      # Synthetic test data
-│   │   └── methods.py         # Domain extensions
-│   └── terrain/               # DEMs (placeholder)
-└── experiments/               # Output directories
+PRIORART (Single Source of Truth)
+├── core/                           # Domain-agnostic infrastructure
+│   ├── plugin.py                  # Plugin interfaces
+│   ├── registry.py                # Plugin discovery
+│   ├── exhaustive.py              # Combination runner
+│   ├── analysis.py                # Redundancy detection
+│   ├── fingerprinting.py          # Parallel fingerprinting
+│   ├── checksums.py               # SHA256 generation
+│   └── cli.py                     # Unified CLI
+├── domains/                        # Feature extraction by domain
+│   ├── terrain/                   # DEM decomposition + upsampling
+│   ├── astronomy/                 # Galaxy morphology (CAS, Gini-M20)
+│   ├── cmb/                       # CMB power spectrum + statistics
+│   ├── satellite/                 # Texture + spectral indices
+│   └── scalar2d/                  # Generic 2D scalar fields
+└── experiments/                    # Output directories
+
+*vector projects (thin app layers)
+├── terravector                    # Terrain similarity search
+├── astrovector                    # Galaxy classification
+├── cmbvector                      # CMB analysis
+├── satvector                      # Satellite imagery
+└── fieldvector                    # Generic field analysis
 ```
 
-## Decomposition Methods
+## Domains
 
-| Category | Methods |
-|----------|---------|
-| Classical | gaussian, gaussian_anisotropic, uniform, median |
-| Edge-Preserving | bilateral, guided, anisotropic_diffusion |
-| Morphological | opening, closing, tophat, rolling_ball, gradient |
-| Wavelet | dwt (haar, db2-db8, sym4, coif2, bior, rbio) |
-| Multi-scale | dog, dog_multiscale, log |
-| Trend Removal | polynomial (deg 1-6), local_polynomial |
+| Domain | Methods | Use Case |
+|--------|---------|----------|
+| **terrain** | 24 decomposition + 16 upsampling | LiDAR DEMs, terrain features |
+| **astronomy** | CAS, Gini-M20, radial profiles | Galaxy morphology |
+| **cmb** | Power spectrum, Minkowski | Cosmic Microwave Background |
+| **satellite** | GLCM texture, spectral indices | Remote sensing |
+| **scalar2d** | Generic statistical features | Any 2D scalar field |
 
-## Upsampling Methods
+## Quick Start
 
-| Category | Methods |
-|----------|---------|
-| Interpolation | nearest, bilinear, bicubic, quartic, quintic |
-| Spline | bspline, cubic_catmull_rom, cubic_mitchell |
-| Frequency | fft_zeropad, sinc_hamming, sinc_blackman |
-| Adaptive | edge_directed, regularized |
-| OpenCV | lanczos, area, linear_exact |
-
-## Usage
-
-### Generate Test Data
+### Installation
 
 ```bash
-cd domains/scalar2d
-python generators.py --output ../../experiments/test_fields --size 256
+git clone https://github.com/bshepp/PRIORART
+cd PRIORART
+pip install -e .
+```
+
+### List Available Domains
+
+```bash
+python -m priorart domains
+
+# Output:
+# PRIORART Domain Registry
+# ========================
+# Domain: terrain
+#   Pipelines: decomp_upsample
+#     - decomp_upsample: 39,731 combinations
+# ...
+```
+
+### Show Domain Details
+
+```bash
+python -m priorart info terrain -v
 ```
 
 ### Run Exhaustive Exploration
 
 ```bash
-python -m core.exhaustive experiments/test_fields/mixed_features.npy \
-    --output experiments/scalar2d_exhaustive \
-    --skip-existing
+# Generate test data
+python -c "import numpy as np; np.save('test.npy', np.random.randn(256, 256))"
+
+# Run all combinations
+python -m priorart run test.npy -d terrain -o results/
+
+# Or just documentation
+python -m priorart run test.npy -d terrain -o results/ --doc-only
 ```
 
 ### Generate Checksums
 
 ```bash
-python -m core.checksums experiments/scalar2d_exhaustive/results \
-    --output experiments/scalar2d_exhaustive/CHECKSUMS.txt
+python -m priorart checksums results/results/
 ```
 
-### Analyze Redundancy
+### Run Redundancy Analysis
 
 ```bash
-python -m core.analysis \
-    --results experiments/scalar2d_exhaustive/results \
-    --checksums experiments/scalar2d_exhaustive/CHECKSUMS.txt \
-    --output experiments/REDUNDANCY_REPORT.md
+python -m priorart analyze results/results/ \
+    --checksums results/results/CHECKSUMS.txt \
+    -o results/REDUNDANCY_REPORT.md
+```
+
+### Parallel Fingerprinting
+
+```bash
+python -m priorart fingerprint results/results/ \
+    --workers 4 \
+    --checkpoint results/fingerprints.json
+```
+
+## Importing from *vector Projects
+
+After migration, `*vector` projects import from PRIORART:
+
+```python
+# In terravector
+from priorart.core.decomposition import run_decomposition
+from priorart.core.upsampling import run_upsampling
+from priorart.domains.terrain import TerrainPlugin
+
+# In astrovector
+from priorart.domains.astronomy import (
+    compute_concentration,
+    compute_asymmetry,
+    compute_gini,
+)
+```
+
+See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for detailed instructions.
+
+## Plugin System
+
+Create your own domain plugin:
+
+```python
+from priorart.core import DomainPlugin, Pipeline, MethodCategory, Method
+
+class MyDomainPlugin(DomainPlugin):
+    @property
+    def name(self) -> str:
+        return "mydomain"
+    
+    @property
+    def description(self) -> str:
+        return "My custom domain"
+    
+    def get_pipelines(self):
+        category = MethodCategory(name='features')
+        category.register(Method(
+            name='my_feature',
+            func=compute_my_feature,
+            category='features',
+            param_ranges={'sigma': [1, 2, 5, 10]}
+        ))
+        return [Pipeline(name='main', stages=[category])]
+
+# Register for auto-discovery
+PLUGIN = MyDomainPlugin()
 ```
 
 ## Prior Art Strategy
@@ -90,17 +171,22 @@ python -m core.analysis \
 4. **Apache 2.0 License**: Explicit patent grant with retaliation clause
 5. **Public Publication**: GitHub provides accessible evidence
 
-## Adding New Domains
+## Proven at Scale
 
-1. Create `domains/your_domain/`
-2. Add `generators.py` with synthetic test data functions
-3. Optionally add `methods.py` for domain-specific extensions
-4. Run exhaustive exploration on your test data
+PRIORART's infrastructure has been tested on:
+- **39,731 combinations** in the terrain domain
+- **4.28 TB** of generated outputs
+- **20 distinct clusters** identified via redundancy analysis
+
+See [DIVERGE/PRIOR_ART.md](https://github.com/bshepp/DIVERGE) for the full terrain prior art.
 
 ## Related Projects
 
-- [RESIDUALS](https://github.com/bshepp/RESIDUALS) - Prior art for terrain/LiDAR feature detection
+- [DIVERGE](https://github.com/bshepp/DIVERGE) - Prior art for terrain/LiDAR (4.28 TB)
 - [terravector](https://github.com/bshepp/terravector) - Terrain patch similarity search
+- [astrovector](https://github.com/bshepp/astrovector) - Galaxy morphology analysis
+- [cmbvector](https://github.com/bshepp/cmbvector) - CMB analysis
+- [satvector](https://github.com/bshepp/satvector) - Satellite imagery analysis
 
 ## License
 
@@ -135,4 +221,3 @@ This is a minefield for patent trolls. Step carefully.
 ---
 
 *Built with NumPy, SciPy, scikit-image, PyWavelets, and OpenCV.*
-
